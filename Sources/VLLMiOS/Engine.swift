@@ -228,7 +228,16 @@ public final class VLLMEngine {
     /// With a `prefix`, every request's prompt must start with the prefix
     /// tokens; admission tiles the frozen prefix cache across the batch and
     /// prefills only each request's suffix.
-    public func run(requests: [EngineRequest], prefix: PrefixCache? = nil) throws -> EngineRunReport {
+    /// `onTokens` (optional) streams generation: called on the engine's thread
+    /// with each request's newly materialized tokens — once after its prefill
+    /// (the first token) and then after every decode chunk (`decodeChunk`
+    /// tokens at a time; set `decodeChunk = 1` for strict per-token streaming
+    /// at a small throughput cost). `done` is true on the request's final call.
+    public func run(
+        requests: [EngineRequest],
+        prefix: PrefixCache? = nil,
+        onTokens: ((_ requestId: Int, _ newTokens: [Int32], _ done: Bool) -> Void)? = nil
+    ) throws -> EngineRunReport {
         let prefixLen = prefix?.tokenCount ?? 0
         if let prefix {
             for req in requests {
@@ -303,6 +312,7 @@ public final class VLLMEngine {
                     slots.append(Slot(
                         request: req, firstToken: firstArr[k],
                         paddedLength: targetLen, at: tokenTime))
+                    onTokens?(req.id, [firstArr[k]], false)
                 }
                 if let g = groupCaches {
                     joinCaches(group: g, arrival: newCaches)
@@ -345,6 +355,7 @@ public final class VLLMEngine {
             var finished: [Int] = []
             let stepArrs = chunkTokens.map { $0.asArray(Int32.self) }
             for (i, slot) in slots.enumerated() {
+                let countBefore = slot.tokens.count
                 for arr in stepArrs {
                     // A stream that hit EOS mid-chunk stops accumulating; the
                     // extra positions in its cache are discarded at exit.
@@ -354,8 +365,12 @@ public final class VLLMEngine {
                     slot.lastToken = arr[i]
                     slot.tokens.append(arr[i])
                 }
-                if slot.isDone || eosTokens.contains(slot.lastToken) {
+                let done = slot.isDone || eosTokens.contains(slot.lastToken)
+                if done {
                     finished.append(i)
+                }
+                if slot.tokens.count > countBefore {
+                    onTokens?(slot.request.id, Array(slot.tokens[countBefore...]), done)
                 }
             }
 

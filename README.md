@@ -95,6 +95,19 @@ for result in report.results {
 }
 ```
 
+**Streaming**: pass `onTokens` to receive each request's tokens as they
+materialize — once at first token, then every decode chunk (4–8 tokens,
+~150–300ms apart at phone speeds). Set `engine.decodeChunk = 1` for strict
+per-token streaming at a small throughput cost (the chunked lazy graph is
+worth ~7%):
+
+```swift
+let report = try engine.run(requests: requests) { id, newTokens, done in
+    // called on the engine's thread; hop to your actor before touching UI
+    render(id, detokenizer.append(newTokens), finished: done)
+}
+```
+
 **Prefix caching**: agent fleets share a system prompt, and prefill dominates
 agent workloads. Freeze the shared prefix once and every request prefills only
 its suffix:
@@ -143,7 +156,7 @@ prefix cache, a sampler (greedy only), or a ragged-batch scheduler.
 Roadmap, in value order:
 
 - [x] Prefix caching (see below)
-- [ ] Streaming per-token callbacks
+- [x] Streaming token callbacks (chunk-granularity; `decodeChunk = 1` for strict per-token)
 - [ ] Sampling beyond greedy
 - [ ] Per-sequence RoPE offsets + padding masks (drop the uniform-offset
       restriction; mlx-swift-lm already ships half the plumbing)
