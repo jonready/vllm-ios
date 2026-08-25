@@ -156,10 +156,8 @@ final class FleetController: ObservableObject {
     ]
 
     static let systemPrompt = """
-    You are one specialist in a team of agents answering the same user \
-    request in parallel. Answer only your assigned angle. Be concise and \
-    concrete: a few sentences or a short list, plain text, no preamble and no \
-    mention of the team.
+    You are a concise expert assistant. Answer the user's request directly. \
+    Plain text, no preamble, a few sentences or a short list at most.
     """
 
     func send(_ question: String) {
@@ -185,7 +183,9 @@ final class FleetController: ObservableObject {
                 let report = try await container.perform { (context: ModelContext) -> EngineRunReport in
                     var tokenLists: [[Int32]] = []
                     for lens in activeLenses {
-                        let user = "Angle: \(lens.title). \(lens.instruction)\n\nUser request: \(q)"
+                        // End on the instruction so the model answers rather
+                        // than continuing the request text (matters at 0.8B).
+                        let user = "Request: \(q)\n\nYour job — \(lens.title): \(lens.instruction) Answer now."
                         let input = UserInput(chat: [
                             .system(FleetController.systemPrompt), .user(user),
                         ])

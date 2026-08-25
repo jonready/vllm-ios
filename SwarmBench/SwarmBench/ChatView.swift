@@ -84,6 +84,33 @@ struct ChatView: View {
             }
             .disabled(fleet.isRunning)
 
+            // Agent count
+            Menu {
+                ForEach(1...8, id: \.self) { n in
+                    Button {
+                        fleet.agentCount = n
+                    } label: {
+                        if n == fleet.agentCount {
+                            Label("\(n) agent\(n == 1 ? "" : "s")", systemImage: "checkmark")
+                        } else {
+                            Text("\(n) agent\(n == 1 ? "" : "s")")
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.2")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("\(fleet.agentCount)")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 10)
+                .frame(height: 34)
+                .background(.regularMaterial, in: Capsule())
+            }
+            .disabled(fleet.isRunning)
+
             Spacer()
 
             // New chat
