@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct FleetChatApp: App {
+struct SwarmBenchApp: App {
     @StateObject private var fleet = FleetController()
 
     var body: some Scene {

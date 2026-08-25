@@ -6,7 +6,7 @@ import MLXLLM
 import MLXLMCommon
 import Tokenizers
 
-// FleetChat: one user request fans out to four specialist agents served
+// SwarmBench: one user request fans out to four specialist agents served
 // concurrently by the VLLMEngine — batched decode, shared-prefix cache,
 // streaming tokens, and early exit as each agent finishes.
 

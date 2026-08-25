@@ -37,7 +37,7 @@ struct ChatView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("FleetChat")
+            Text("SwarmBench")
                 .font(.headline)
             Spacer()
             switch fleet.modelState {
