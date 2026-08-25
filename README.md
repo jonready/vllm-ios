@@ -52,7 +52,10 @@ admission of new requests into a running batch (best measured TTFT under load:
 0.94s).
 
 Scheduling overhead is measurably zero: per-stream throughput inside the full
-engine matches a hand-rolled static batch exactly.
+engine matches a hand-rolled static batch exactly. All numbers come from
+thermally gated runs (cooling gaps between levels; an iPhone throttles below
+what `ProcessInfo.thermalState` reports) — raw result data is in
+[`docs/benchmark_results_20260825.json`](docs/benchmark_results_20260825.json).
 
 Across everything measured, quantization and batching were the two levers that
 mattered — both attack memory bandwidth, and they multiply: 8-bit single-stream
@@ -186,24 +189,6 @@ model selector that switches between the four quants with live reload, an
 agent-count control, and chat history; settings manage on-device model storage.
 Open `SwarmBench/SwarmBench.xcodeproj`, set your team, run on a device; models
 download on first use.
-
-## IceBench
-
-`IceBench/` is the iOS benchmark app behind every number above — and the
-methodology is the point: it enforces thermal gates and mandatory cooling gaps
-between runs, tracks thermal state per run, and measures burst duty cycles,
-because an un-gated mobile LLM benchmark measures the ordering of its test
-cases, not the software. It benchmarks three arms side by side: llama.cpp
-(GGUF), stock single-stream MLX, and the vllm-ios engine (burst, staggered
-arrivals, and a b1/2/4/8 scaling sweep), with a model library covering uniform,
-mixed, and calibrated-dynamic quants. Results persist on-device and export as
-JSON.
-
-```sh
-cd IceBench
-./fetch-llama-xcframework.sh   # one-time: prebuilt llama.cpp Metal framework
-open IceBench.xcodeproj        # set your team, run on a device
-```
 
 ## Related work
 
