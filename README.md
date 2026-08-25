@@ -154,6 +154,8 @@ open IceBench.xcodeproj        # set your team, run on a device
 | Project | What it is | iOS? | Multi-sequence batching? |
 |---|---|---|---|
 | [vllm-mlx](https://arxiv.org/abs/2601.19139) | Python engine on MLX | ❌ Mac | ✅ |
+| mlx-lm (Python) `BatchGenerator` | Upstream Python batch generation | ❌ Mac | ✅ |
+| [mlx-swift-lm PR #263](https://github.com/ml-explore/mlx-swift-lm/pull/263) | Swift continuous batching, unmerged since May 2026 | ⏳ not released | ✅ (pending) |
 | [TheTom/vllm-swift](https://github.com/TheTom/vllm-swift) | Python vLLM plugin on mlx-swift | ❌ Mac | ✅ |
 | [SwiftLM](https://github.com/SharpAI/SwiftLM) | MLX Swift server + iOS app | ✅ | ❌ |
 | [qwen3.5-mlx-continuous-batching](https://github.com/PerhapxinLab/qwen3.5-mlx-continuous-batching) | Swift VLM server (35B) | ❌ Mac | ✅ |
