@@ -3,3 +3,4 @@
 .DS_Store
 Package.resolved
 *.xcodeproj
+IceBench/llama.xcframework/

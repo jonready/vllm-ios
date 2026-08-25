@@ -131,6 +131,24 @@ Roadmap, in value order:
 - [ ] Per-sequence RoPE offsets + padding masks (drop the uniform-offset
       restriction; mlx-swift-lm already ships half the plumbing)
 
+## IceBench
+
+`IceBench/` is the iOS benchmark app behind every number above — and the
+methodology is the point: it enforces thermal gates and mandatory cooling gaps
+between runs, tracks thermal state per run, and measures burst duty cycles,
+because an un-gated mobile LLM benchmark measures the ordering of its test
+cases, not the software. It benchmarks three arms side by side: llama.cpp
+(GGUF), stock single-stream MLX, and the vllm-ios engine (burst, staggered
+arrivals, and a b1/2/4/8 scaling sweep), with a model library covering uniform,
+mixed, and calibrated-dynamic quants. Results persist on-device and export as
+JSON.
+
+```sh
+cd IceBench
+./fetch-llama-xcframework.sh   # one-time: prebuilt llama.cpp Metal framework
+open IceBench.xcodeproj        # set your team, run on a device
+```
+
 ## Related work
 
 | Project | What it is | iOS? | Multi-sequence batching? |
