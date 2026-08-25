@@ -66,6 +66,20 @@ print("prompts tokenized: \(tokenLists.map(\.count).min()!)–\(tokenLists.map(\
 
 let engine = VLLMEngine(model: context.model, padToken: padToken, maxBatch: maxBatch)
 engine.decodeChunk = Int(flag("chunk", default: "8")) ?? 8
+
+// --prefix: cache the longest common token prefix (the shared system prompt)
+// once, and prefill only suffixes.
+var prefixCache: PrefixCache? = nil
+if CommandLine.arguments.contains("--prefix") {
+    let pfxTokens = PrefixCache.longestCommonPrefix(of: tokenLists)
+    if pfxTokens.isEmpty {
+        print("prefix: no common prefix found")
+    } else {
+        let t0p = CFAbsoluteTimeGetCurrent()
+        prefixCache = try engine.cachePrefix(pfxTokens)
+        print(String(format: "prefix cache: %d tokens, built once in %.2fs", pfxTokens.count, CFAbsoluteTimeGetCurrent() - t0p))
+    }
+}
 engine.log = { print("  [engine] \($0)") }
 
 // Warmup: compile kernels for the shapes in play.
@@ -87,7 +101,7 @@ func runScenario(_ name: String, arrivals: [Double]) throws {
             id: i, promptTokens: tokenLists[i], maxTokens: genTokens,
             arrivalTime: base + arrivals[i])
     }
-    let report = try engine.run(requests: requests)
+    let report = try engine.run(requests: requests, prefix: prefixCache)
 
     print("req    arrive     ttft      e2e   dec t/s  pad waste")
     for r in report.results {
@@ -99,6 +113,8 @@ func runScenario(_ name: String, arrivals: [Double]) throws {
     }
 
     let totalGen = report.results.reduce(0) { $0 + $1.tokens.count }
+    let saved = report.results.reduce(0) { $0 + $1.prefixTokens }
+    if saved > 0 { print("prefix reuse: \(saved) prompt tokens served from cache") }
     let ttfts = report.results.map(\.ttft).sorted()
     print(String(format: "wall %.1fs | %d gen tokens | agg gen %.1f t/s | ttft p50 %.2fs max %.2fs",
                  report.wallSeconds, totalGen,

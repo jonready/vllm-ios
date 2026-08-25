@@ -135,6 +135,7 @@ final class BenchController: ObservableObject {
     // MARK: - MLX arm (single stream — MLX has no batched decode)
 
     @Published var mlxLoadedId: String? = nil
+    @Published var usePrefixCache: Bool = false
 
     func loadMLXModel(id: String) {
         guard !isBusy else { return }
@@ -258,6 +259,7 @@ final class BenchController: ObservableObject {
         // Batch cap follows the highest selected concurrency level (1–8).
         let maxBatch = min(8, max(1, concurrencyLevels.max() ?? 8))
         let genTokens = 128
+        let usePfx = usePrefixCache
         state = .running("vllm-swift: preparing…")
         appendLog("=== vllm-swift engine: \(modelId), n=\(n), maxBatch=\(maxBatch), gen \(genTokens) ===")
         UIApplication.shared.isIdleTimerDisabled = true
@@ -303,6 +305,7 @@ final class BenchController: ObservableObject {
                         system: Workloads.systemPrompt, users: prompts,
                         genTokens: genTokens, maxBatch: maxBatch,
                         arrivalOffsets: arrivals,
+                        usePrefixCache: usePfx,
                         progress: { msg in
                             Task { @MainActor in self.state = .running("\(label): \(msg)") }
                         })
@@ -333,7 +336,7 @@ final class BenchController: ObservableObject {
                         thermalState: ProcessInfo.processInfo.thermalState.label,
                         thermalStateStart: thermalStart,
                         kvUnified: nil, flashAttention: nil)
-                    result.stageLabel = "\(label)-b\(maxBatch)-\(variant)"
+                    result.stageLabel = "\(label)-b\(maxBatch)\(usePfx ? "-pfx" : "")-\(variant)"
                     result.engine = "vllm-swift"
                     let res = result
                     let summary = r.stepSummary
@@ -366,6 +369,7 @@ final class BenchController: ObservableObject {
         } ?? "?"
         let nReq = 8
         let genTokens = 128
+        let usePfx = usePrefixCache
         cancelToken.cancelled = false
         let token = cancelToken
         state = .running("MLX scaling sweep: preparing…")
@@ -413,6 +417,7 @@ final class BenchController: ObservableObject {
                         system: Workloads.systemPrompt, users: prompts,
                         genTokens: genTokens, maxBatch: b,
                         arrivalOffsets: Array(repeating: 0, count: nReq),
+                        usePrefixCache: usePfx,
                         progress: { msg in
                             Task { @MainActor in self.state = .running("b\(b): \(msg)") }
                         })
@@ -431,7 +436,7 @@ final class BenchController: ObservableObject {
                         thermalState: ProcessInfo.processInfo.thermalState.label,
                         thermalStateStart: thermalStart,
                         kvUnified: nil, flashAttention: nil)
-                    result.stageLabel = "mlxscale-b\(b)-\(variant)"
+                    result.stageLabel = "mlxscale-b\(b)\(usePfx ? "-pfx" : "")-\(variant)"
                     result.engine = "vllm-swift"
                     let res = result
                     let summary = r.stepSummary

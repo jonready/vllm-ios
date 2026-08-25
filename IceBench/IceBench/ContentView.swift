@@ -262,6 +262,7 @@ struct ContentView: View {
             Picker("n_ubatch", selection: $bench.nUbatch) {
                 ForEach([512, 1024, 2048], id: \.self) { Text("\($0)").tag($0) }
             }
+            Toggle("Prefix cache (engine runs: share the system prompt KV)", isOn: $bench.usePrefixCache)
             Toggle("Burst mode (all requests in one batch, time recovery)", isOn: $bench.burstMode)
             if bench.burstMode {
                 Stepper("\(bench.burstCount) bursts", value: $bench.burstCount, in: 1...10)

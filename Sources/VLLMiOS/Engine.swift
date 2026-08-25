@@ -35,10 +35,44 @@ public struct EngineRequest {
     }
 }
 
+/// A frozen KV/recurrent-cache snapshot of a shared prompt prefix (batch 1).
+/// Build once with ``VLLMEngine/cachePrefix(_:)``; pass to ``VLLMEngine/run(requests:prefix:)``
+/// and every admitted request pays prefill only for its suffix.
+public final class PrefixCache {
+    public let tokens: [Int32]
+    let caches: [KVCache]
+
+    init(tokens: [Int32], caches: [KVCache]) {
+        self.tokens = tokens
+        self.caches = caches
+    }
+
+    public var tokenCount: Int { tokens.count }
+
+    /// Longest common token prefix across prompts, capped so every prompt
+    /// keeps at least one suffix token to prefill.
+    public static func longestCommonPrefix(of prompts: [[Int32]]) -> [Int32] {
+        guard let first = prompts.first, !first.isEmpty else { return [] }
+        var n = first.count
+        for p in prompts.dropFirst() {
+            var i = 0
+            let bound = min(n, p.count)
+            while i < bound && p[i] == first[i] { i += 1 }
+            n = i
+            if n == 0 { return [] }
+        }
+        let minLen = prompts.map(\.count).min() ?? 0
+        n = min(n, minLen - 1)
+        return n > 0 ? Array(first[..<n]) : []
+    }
+}
+
 public struct EngineResult {
     public let id: Int
     public let promptLength: Int
     public let paddedLength: Int
+    /// Tokens served from the shared prefix cache instead of being prefilled.
+    public let prefixTokens: Int
     public let tokens: [Int32]
     public let arrivalTime: Double
     public let firstTokenTime: Double
@@ -115,14 +149,44 @@ public final class VLLMEngine {
         }
     }
 
+    // MARK: - Prefix caching
+
+    /// Prefill `tokens` once (batch 1, cache-state-only evaluation) and freeze
+    /// the result. The returned object is immutable; runs tile deep copies of
+    /// it, so one PrefixCache serves any number of runs and batch sizes.
+    public func cachePrefix(_ tokens: [Int32]) throws -> PrefixCache {
+        precondition(!tokens.isEmpty, "prefix must be non-empty")
+        let caches = try model.newCache(parameters: nil)
+        let inputs = MLXArray(tokens).reshaped([1, tokens.count])
+        var pos = 0
+        while pos < tokens.count {
+            let n = min(prefillChunk, tokens.count - pos)
+            _ = model(inputs[0..., pos ..< (pos + n)], cache: caches)
+            eval(caches.flatMap { $0.innerState() })
+            pos += n
+        }
+        return PrefixCache(tokens: tokens, caches: caches)
+    }
+
+    /// Batch-k caches primed with the prefix: deep-copy the frozen batch-1
+    /// snapshot and concatenate copies along the batch axis via the same
+    /// surgery used for admission.
+    private func tiledCaches(_ prefix: PrefixCache, count: Int) -> [KVCache] {
+        let base = prefix.caches.map { $0.copy() }
+        guard count > 1 else { return base }
+        for _ in 1..<count {
+            joinCaches(group: base, arrival: prefix.caches.map { $0.copy() })
+        }
+        return base
+    }
+
     // MARK: - Prefill (solo batch of arrivals, all padded to targetLen)
 
-    /// Prefill `arrivals` (already padded to a common length) into fresh
-    /// caches; returns (caches, firstTokens).
-    private func prefill(_ padded: [[Int32]]) throws -> ([KVCache], MLXArray) {
+    /// Prefill `padded` token rows into `caches` (fresh, or prefix-primed with
+    /// a nonzero offset); returns the first sampled token per row.
+    private func prefill(_ padded: [[Int32]], into caches: [KVCache]) throws -> MLXArray {
         let B = padded.count
         let L = padded[0].count
-        let caches = try model.newCache(parameters: nil)
         let inputs = MLXArray(padded.flatMap { $0 }).reshaped([B, L])
 
         var pos = 0
@@ -136,7 +200,7 @@ public final class VLLMEngine {
         let logits = model(inputs[0..., lastIndex ..< L], cache: caches)
         let first = argMax(logits[0..., logits.dim(1) - 1, 0...], axis: -1).asType(.int32)
         eval(first)
-        return (caches, first)
+        return first
     }
 
     // MARK: - Run
@@ -161,7 +225,19 @@ public final class VLLMEngine {
 
     /// Runs the engine until every request has completed. Single-threaded;
     /// arrivals are honored by their `arrivalTime` (virtual open-loop load).
-    public func run(requests: [EngineRequest]) throws -> EngineRunReport {
+    /// With a `prefix`, every request's prompt must start with the prefix
+    /// tokens; admission tiles the frozen prefix cache across the batch and
+    /// prefills only each request's suffix.
+    public func run(requests: [EngineRequest], prefix: PrefixCache? = nil) throws -> EngineRunReport {
+        let prefixLen = prefix?.tokenCount ?? 0
+        if let prefix {
+            for req in requests {
+                precondition(
+                    req.promptTokens.count > prefixLen
+                        && Array(req.promptTokens.prefix(prefixLen)) == prefix.tokens,
+                    "request \(req.id) does not start with the shared prefix")
+            }
+        }
         var queue = requests.sorted { $0.arrivalTime < $1.arrivalTime }
         var slots: [Slot] = []
         var groupCaches: [KVCache]? = nil
@@ -200,9 +276,12 @@ public final class VLLMEngine {
                 let targetLen = slots.isEmpty
                     ? admitted.map { $0.promptTokens.count }.max()!
                     : offset
+                // With a prefix, pad and prefill only the suffix; the prefix
+                // rows arrive pre-filled via the tiled cache snapshot.
+                let suffixTarget = targetLen - prefixLen
                 let padded = admitted.map { req -> [Int32] in
-                    let toks = req.promptTokens
-                    let need = targetLen - toks.count
+                    let toks = Array(req.promptTokens.dropFirst(prefixLen))
+                    let need = suffixTarget - toks.count
                     guard need > 0 else { return toks }
                     let cut = max(0, toks.count - 20)
                     return Array(toks[..<cut])
@@ -210,7 +289,13 @@ public final class VLLMEngine {
                         + Array(toks[cut...])
                 }
                 let tPrefill = CFAbsoluteTimeGetCurrent()
-                let (newCaches, firstTokens) = try prefill(padded)
+                let newCaches: [KVCache]
+                if let prefix {
+                    newCaches = tiledCaches(prefix, count: admitted.count)
+                } else {
+                    newCaches = try model.newCache(parameters: nil)
+                }
+                let firstTokens = try prefill(padded, into: newCaches)
                 let firstArr = firstTokens.asArray(Int32.self)
                 let tokenTime = CFAbsoluteTimeGetCurrent()
 
@@ -283,6 +368,7 @@ public final class VLLMEngine {
                         id: slot.request.id,
                         promptLength: slot.request.promptTokens.count,
                         paddedLength: slot.paddedLength,
+                        prefixTokens: prefixLen,
                         tokens: slot.tokens,
                         arrivalTime: slot.request.arrivalTime,
                         firstTokenTime: slot.firstTokenTime,

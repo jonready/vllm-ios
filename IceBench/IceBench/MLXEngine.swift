@@ -124,7 +124,8 @@ final class MLXEngine {
 
     func runVLLMScenario(
         system: String, users: [String], genTokens: Int, maxBatch: Int,
-        arrivalOffsets: [Double], progress: @escaping (String) -> Void
+        arrivalOffsets: [Double], usePrefixCache: Bool = false,
+        progress: @escaping (String) -> Void
     ) async throws -> VLLMScenarioResult {
         guard let container else { throw EngineError(message: "MLX model not loaded") }
         return try await container.perform { (context: ModelContext) -> VLLMScenarioResult in
@@ -141,13 +142,21 @@ final class MLXEngine {
             engine.decodeChunk = 4
             engine.log = { progress($0) }
 
+            var prefixCache: PrefixCache? = nil
+            if usePrefixCache {
+                let shared = PrefixCache.longestCommonPrefix(of: tokenLists)
+                if !shared.isEmpty {
+                    prefixCache = try engine.cachePrefix(shared)
+                    progress("prefix cached: \(shared.count) tokens")
+                }
+            }
             let base = CFAbsoluteTimeGetCurrent() + 0.05
             let requests = tokenLists.enumerated().map { i, toks in
                 EngineRequest(
                     id: i, promptTokens: toks, maxTokens: genTokens,
                     arrivalTime: base + arrivalOffsets[i])
             }
-            let report = try engine.run(requests: requests)
+            let report = try engine.run(requests: requests, prefix: prefixCache)
 
             var byBatch: [Int: (n: Int, total: Double)] = [:]
             for s in report.stepStats {

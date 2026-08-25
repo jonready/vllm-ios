@@ -95,6 +95,23 @@ for result in report.results {
 }
 ```
 
+**Prefix caching**: agent fleets share a system prompt, and prefill dominates
+agent workloads. Freeze the shared prefix once and every request prefills only
+its suffix:
+
+```swift
+let shared = PrefixCache.longestCommonPrefix(of: prompts)   // token-level LCP
+let prefix = try engine.cachePrefix(shared)                  // prefilled once
+let report = try engine.run(requests: requests, prefix: prefix)
+```
+
+Measured (M-series Mac, 16-request burst, 174-token shared prefix): wall
+8.4s → 7.6s and TTFT p50 −11%, with the prefix snapshot built once in 0.09s.
+Correctness note: the transplanted KV state is exact, but suffix prefill uses
+different chunk boundaries than full prefill, so greedy outputs can differ at
+rare numeric near-ties (15/16 byte-identical in testing) — the same caveat
+vLLM documents for its prefix caching.
+
 On iOS, cap MLX's buffer cache or the recycled-buffer pool will count against
 the jetsam limit:
 
@@ -125,7 +142,7 @@ quants like [OptiQ](https://huggingface.co/mlx-community/Qwen3.5-0.8B-OptiQ-4bit
 prefix cache, a sampler (greedy only), or a ragged-batch scheduler.
 Roadmap, in value order:
 
-- [ ] Prefix caching (shared system prompts dominate prefill in agent workloads)
+- [x] Prefix caching (see below)
 - [ ] Streaming per-token callbacks
 - [ ] Sampling beyond greedy
 - [ ] Per-sequence RoPE offsets + padding masks (drop the uniform-offset
