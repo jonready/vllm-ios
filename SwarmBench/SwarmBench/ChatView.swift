@@ -244,7 +244,12 @@ struct ChatView: View {
 struct TurnView: View {
     let turn: FleetController.Turn
 
-    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    // Single agent gets the full width; fleets flow in two columns.
+    private var columns: [GridItem] {
+        turn.agents.count == 1
+            ? [GridItem(.flexible())]
+            : [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -325,10 +330,17 @@ struct SettingsSheet: View {
                     }
                     .disabled(fleet.isRunning)
                 }
-                Section("Swarm") {
+                Section {
+                    Stepper("Simultaneous agents: \(fleet.agentCount)",
+                            value: $fleet.agentCount, in: 1...8)
                     Stepper("Max tokens per agent: \(fleet.maxTokensPerAgent)",
                             value: $fleet.maxTokensPerAgent, in: 64...512, step: 32)
                     Toggle("Prefix caching", isOn: $fleet.prefixCachingEnabled)
+                } header: {
+                    Text("Swarm")
+                } footer: {
+                    Text("Agents are drawn in order from: " +
+                         FleetController.lenses.map(\.title).joined(separator: ", ") + ".")
                 }
                 Section {
                     Link("vllm-ios on GitHub",

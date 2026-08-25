@@ -62,6 +62,7 @@ final class FleetController: ObservableObject {
     // Settings
     @Published var maxTokensPerAgent: Int = 160
     @Published var prefixCachingEnabled: Bool = true
+    @Published var agentCount: Int = 4  // 1...8 simultaneous agents
 
     private var container: ModelContainer?
 
@@ -148,10 +149,14 @@ final class FleetController: ObservableObject {
         ("Plan", "Give a short, concrete step-by-step plan for the request."),
         ("Risks", "Point out the pitfalls, gotchas, and failure modes to watch for."),
         ("Alternatives", "Suggest different approaches or options worth considering."),
+        ("Examples", "Give concrete examples or precedents that illuminate the request."),
+        ("Costs", "Estimate the money, time, and effort involved."),
+        ("Next steps", "Name the single best immediate next action and why."),
+        ("Contrarian", "Argue the strongest case against the obvious approach."),
     ]
 
     static let systemPrompt = """
-    You are one specialist in a team of four agents answering the same user \
+    You are one specialist in a team of agents answering the same user \
     request in parallel. Answer only your assigned angle. Be concise and \
     concrete: a few sentences or a short list, plain text, no preamble and no \
     mention of the team.
@@ -161,7 +166,8 @@ final class FleetController: ObservableObject {
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty, !isRunning, let container else { return }
         isRunning = true
-        let agents = Self.lenses.enumerated().map { i, lens in
+        let activeLenses = Array(Self.lenses.prefix(max(1, min(8, agentCount))))
+        let agents = activeLenses.enumerated().map { i, lens in
             AgentStream(id: i, title: lens.title)
         }
         let chatID = currentChatID
@@ -178,7 +184,7 @@ final class FleetController: ObservableObject {
             do {
                 let report = try await container.perform { (context: ModelContext) -> EngineRunReport in
                     var tokenLists: [[Int32]] = []
-                    for lens in FleetController.lenses {
+                    for lens in activeLenses {
                         let user = "Angle: \(lens.title). \(lens.instruction)\n\nUser request: \(q)"
                         let input = UserInput(chat: [
                             .system(FleetController.systemPrompt), .user(user),
@@ -193,7 +199,7 @@ final class FleetController: ObservableObject {
 
                     let engine = VLLMEngine(
                         model: context.model, padToken: padTok,
-                        eosTokens: eos, maxBatch: FleetController.lenses.count)
+                        eosTokens: eos, maxBatch: activeLenses.count)
                     engine.decodeChunk = 4
 
                     var prefix: PrefixCache? = nil
