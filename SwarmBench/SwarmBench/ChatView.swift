@@ -72,16 +72,19 @@ struct ChatView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text(fleet.selectedModel.family)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     Text(fleet.selectedModel.variant)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
+                .lineLimit(1)
+                .fixedSize()
             }
+            .layoutPriority(1)
             .disabled(fleet.isRunning)
 
             // Agent count
@@ -99,8 +102,7 @@ struct ChatView: View {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "person.2")
-                        .font(.system(size: 13, weight: .medium))
+                    Text("🤖").font(.system(size: 14))
                     Text("\(fleet.agentCount)")
                         .font(.subheadline.weight(.semibold))
                 }
@@ -369,6 +371,38 @@ struct SettingsSheet: View {
                     Text("Agents are drawn in order from: " +
                          FleetController.lenses.map(\.title).joined(separator: ", ") + ".")
                 }
+                Section {
+                    ForEach(FleetController.models) { m in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(m.family) \(m.variant)")
+                                if let size = fleet.sizeOnDisk(of: m) {
+                                    Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                } else {
+                                    Text("Not downloaded")
+                                        .font(.caption).foregroundStyle(.tertiary)
+                                }
+                            }
+                            Spacer()
+                            if fleet.sizeOnDisk(of: m) != nil {
+                                Button(role: .destructive) {
+                                    fleet.deleteFromDevice(m)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                                .disabled(fleet.isRunning)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("On-device storage")
+                } footer: {
+                    Text("Deleting the active model unloads it; select it again to re-download.")
+                }
+                .id(fleet.storageVersion)
+
                 Section {
                     Link("vllm-ios on GitHub",
                          destination: URL(string: "https://github.com/jonready/vllm-ios")!)

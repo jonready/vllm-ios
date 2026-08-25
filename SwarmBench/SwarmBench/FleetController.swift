@@ -105,12 +105,54 @@ final class FleetController: ObservableObject {
     // MARK: - Model
 
     func select(model: ModelOption) {
-        guard model != selectedModel, !isRunning else { return }
+        guard !isRunning else { return }
+        guard model != selectedModel || container == nil else { return }
         selectedModel = model
         container = nil
         modelState = .idle
         loadModelIfNeeded()
     }
+
+    // MARK: - On-device storage
+
+    /// Mirror of swift-huggingface's iOS HubCache layout:
+    /// Caches/huggingface/hub/models--<org>--<name>/
+    static func cacheDirectory(for model: ModelOption) -> URL {
+        URL.cachesDirectory
+            .appendingPathComponent("huggingface")
+            .appendingPathComponent("hub")
+            .appendingPathComponent("models--" + model.id.replacingOccurrences(of: "/", with: "--"))
+    }
+
+    func sizeOnDisk(of model: ModelOption) -> Int64? {
+        let dir = Self.cacheDirectory(for: model)
+        guard FileManager.default.fileExists(atPath: dir.path) else { return nil }
+        var total: Int64 = 0
+        let keys: [URLResourceKey] = [.fileSizeKey, .isSymbolicLinkKey, .isRegularFileKey]
+        if let e = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: keys,
+                                                  options: [.skipsHiddenFiles]) {
+            for case let url as URL in e {
+                guard let v = try? url.resourceValues(forKeys: Set(keys)),
+                      v.isRegularFile == true, v.isSymbolicLink != true else { continue }
+                total += Int64(v.fileSize ?? 0)
+            }
+        }
+        return total
+    }
+
+    /// Removes the model's files from the device. If it's the active model,
+    /// the engine is unloaded; reselecting it re-downloads.
+    func deleteFromDevice(_ model: ModelOption) {
+        guard !isRunning else { return }
+        try? FileManager.default.removeItem(at: Self.cacheDirectory(for: model))
+        if model == selectedModel {
+            container = nil
+            modelState = .idle
+        }
+        storageVersion += 1
+    }
+
+    @Published var storageVersion = 0
 
     func loadModelIfNeeded() {
         guard container == nil else { return }
