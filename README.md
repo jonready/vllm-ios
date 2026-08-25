@@ -161,6 +161,16 @@ Roadmap, in value order:
 - [ ] Per-sequence RoPE offsets + padding masks (drop the uniform-offset
       restriction; mlx-swift-lm already ships half the plumbing)
 
+## FleetChat
+
+`FleetChat/` is the demo app: a ChatGPT-style chat where each message fans out
+to **four specialist agents** (key facts, plan, risks, alternatives) served
+concurrently by the engine — batched decode, a shared-prefix cache built per
+turn, streaming tokens rendering live into a 2×2 card grid, and early exit as
+each agent finishes. One question, four answers streaming at once, entirely
+on-device. Open `FleetChat/FleetChat.xcodeproj`, set your team, run on a
+device; the model (~600 MB) downloads on first launch.
+
 ## IceBench
 
 `IceBench/` is the iOS benchmark app behind every number above — and the
