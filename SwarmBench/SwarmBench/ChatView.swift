@@ -17,6 +17,7 @@ struct ChatView: View {
                 composer
             }
         }
+        .tint(.primary)  // default blue accent is illegible on the purple hero
         .onAppear { fleet.loadModelIfNeeded() }
         .sheet(isPresented: $showSettings) { SettingsSheet() }
         .sheet(isPresented: $showChats) { ChatsSheet() }
@@ -161,7 +162,9 @@ struct ChatView: View {
             Spacer()
             Text("Meet the Swarm")
                 .font(.system(size: 38, weight: .semibold))
-            Text("One question. Four specialist agents\nanswering in parallel — entirely on this device.")
+            Text(fleet.agentCount == 1
+                 ? "One question. One agent.\nEntirely on this device."
+                 : "One question. \(fleet.agentCount) specialist agents\nanswering in parallel — entirely on this device.")
                 .multilineTextAlignment(.center)
                 .font(.title3)
                 .foregroundStyle(.secondary)
