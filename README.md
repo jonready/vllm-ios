@@ -18,6 +18,14 @@ iPhone](https://jonready.com/blog/posts/continuous-batching-on-an-iphone.html).
 > Architecturally inspired by vLLM and
 > [vllm-mlx](https://arxiv.org/abs/2601.19139); shares no code with either.
 
+<p align="center">
+  <a href="https://jonready.com/blog/posts/continuous-batching-on-an-iphone.html">
+    <img src="docs/swarmbench.jpg" width="230" alt="SwarmBench: eight agents answering one question in parallel on an iPhone">
+  </a>
+  <br>
+  <em>SwarmBench: one question, one batched decode, eight agents streaming. <a href="https://jonready.com/blog/posts/continuous-batching-on-an-iphone.html">Video in the blog post.</a></em>
+</p>
+
 ## Measured on an iPhone 16 Pro
 
 Qwen3.5-0.8B, 4-bit, greedy decoding, thermally controlled runs:
@@ -45,6 +53,12 @@ admission of new requests into a running batch (best measured TTFT under load:
 
 Scheduling overhead is measurably zero: per-stream throughput inside the full
 engine matches a hand-rolled static batch exactly.
+
+Across everything measured, quantization and batching were the two levers that
+mattered — both attack memory bandwidth, and they multiply: 8-bit single-stream
+(51 tok/s) → 4-bit batch-8 (199 tok/s) is a 3.9x swing on the same silicon.
+Everything else tuned (flash attention, KV layouts, chunk sizes) moved results
+by single-digit percentages.
 
 ## How it works
 
@@ -163,13 +177,15 @@ Roadmap, in value order:
 
 ## SwarmBench (demo app)
 
-`SwarmBench/` is the demo app: a ChatGPT-style chat where each message fans out
-to **four specialist agents** (key facts, plan, risks, alternatives) served
-concurrently by the engine — batched decode, a shared-prefix cache built per
-turn, streaming tokens rendering live into a 2×2 card grid, and early exit as
-each agent finishes. One question, four answers streaming at once, entirely
-on-device. Open `SwarmBench/SwarmBench.xcodeproj`, set your team, run on a
-device; the model (~600 MB) downloads on first launch.
+`SwarmBench/` is the demo app: a chat UI where each message fans out to **1–8
+specialist agents** (key facts, plan, risks, contrarian, …) served concurrently
+by the engine — batched decode, a per-turn shared-prefix cache, streaming
+tokens into a live card grid, and early exit as each agent finishes. In a
+typical clip: 8 agents, 385 tokens, 2.9 seconds, on-device. The header has a
+model selector that switches between the four quants with live reload, an
+agent-count control, and chat history; settings manage on-device model storage.
+Open `SwarmBench/SwarmBench.xcodeproj`, set your team, run on a device; models
+download on first use.
 
 ## IceBench
 
